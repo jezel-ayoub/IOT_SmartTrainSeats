@@ -7,8 +7,8 @@ most free seats, so people spread along the train before the doors open.
 Part of the IoT project course, Taub Faculty of Computer Science, Technion.
 
 - **Project:** Smart transportation — train seat occupancy and platform guidance
-- **Group:** _fill in your group number_
-- **Team:** _fill in names_
+- **Group:** ב2
+- **Team:** מדהלה יובל, עבדו סלין, ג'יזל אבו איוב
 
 ## What it does
 
