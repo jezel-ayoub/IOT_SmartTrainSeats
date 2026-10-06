@@ -1,53 +1,93 @@
 # Smart Train Seat Guide
 
-Ultrasonic sensors under train seats detect whether each seat is taken. A light
-strip and a display on the platform tell waiting passengers which car has the
-most free seats, so people spread along the train before the doors open.
+An IoT system that detects which train seats are free and tells waiting
+passengers on the platform which car to board.
 
-Part of the IoT project course, Taub Faculty of Computer Science, Technion.
+Technion, courses 236332 / 236333 — smart transportation.
 
-- **Project:** Smart transportation — train seat occupancy and platform guidance
-- **Group:** ב2
-- **Team:** מדהלה יובל, עבדו סלין, ג'יזל אבו איוב
+## The idea
 
-## What it does
+Passengers crowd into the nearest door and then walk the length of a train
+looking for a seat. The information needed to avoid that already exists on the
+train; it simply never reaches the platform. This project closes that gap.
 
-| | |
+An ultrasonic sensor above each seat reports whether it is occupied. A
+controller aggregates the seats of each car, drives a colour-coded light per car
+on the platform, and serves a live display showing the whole train and
+recommending which car to board.
+
+## How it works
+
+Each HC-SR04 sensor measures the distance to the seat below it. A short
+distance means someone is sitting there.
+
+Raw ultrasonic readings are noisy, so a reading is not trusted on its own:
+
+- **Smoothing** — an exponential moving average removes single-sample spikes.
+- **Hysteresis** — two thresholds, one to become occupied and a higher one to
+  become free, so a reading hovering at the boundary cannot oscillate.
+- **Dwell time** — a change must persist for two seconds before it counts, so a
+  passenger walking past does not register as sitting down.
+- **Fault state** — a sensor that returns no echo for three seconds is reported
+  as faulty rather than silently read as an empty seat.
+
+## Car colours
+
+| Colour | Meaning |
 |---|---|
-| Seat sensing | Two HC-SR04 sensors, one per seat, in the real car |
-| False-alarm filtering | A seat counts as taken only after someone stays for 2 seconds, so passers-by are ignored |
-| Fault handling | A sensor that stops responding is reported as a fault, never as a free seat |
-| Platform lights | One LED per car: green (plenty of room), yellow (filling up), red (full), blue (sensor fault) |
-| Live page | A web page served by the board shows every car and recommends the best one |
-| Network resilience | If WiFi drops, sensing and lights keep working and the page returns by itself |
-| Simulated cars | Cars 2 and 3 are driven from the page, so a whole train is demonstrated with one physical car |
+| Green | More than half the seats free |
+| Yellow | Some free, but half or fewer |
+| Red | Full |
+| Blue | A sensor in that car has failed |
 
-## Hardware
+The same rule drives both the physical LEDs and the web display, from one
+definition, so the two can never disagree.
 
-| Qty | Component | Role |
-|-----|-----------|------|
-| 1 | ESP32 DevKit V1 (DOIT) | Reads the sensors, drives the lights, serves the page |
-| 2 | HC-SR04 ultrasonic distance sensor | One per seat in the real car |
-| 1 | WS2812 (NeoPixel) light strip, 3 LEDs | Platform status light per car |
-| 2 | Breadboard | The ESP32 is wider than one breadboard |
-| ~10 | Jumper wires (M-M and M-F) | Wiring |
-| 1 | USB-C cable / phone hotspot | Power and network |
+## The train
 
-Pin assignments are in [Documentation/HARDWARE_WIRING.md](Documentation/HARDWARE_WIRING.md).
+Car 1 is the pilot car: two seats with real sensors, updating by themselves.
+Cars 2 and 3 are simulated and respond to a seat being tapped on the display,
+which allows a full three-car train to be demonstrated from one instrumented
+car.
+
+## The platform display
+
+The controller runs a web server on the local network and serves a station
+display: the train drawn from above, seats coloured live, the recommended car
+highlighted, and a connection indicator that falls back to demo mode when the
+page is opened away from the controller.
+
+The page is served as three small responses — document, stylesheet, script —
+rather than one large one. A single response of that size does not survive the
+ESP32's socket buffer intact, and the symptom is a page that loads but never
+runs its script.
 
 ## Repository layout
 
-- `ESP32/seat_guide/` — the main program
-- `Unit Tests/` — one standalone test sketch per piece of hardware, plus the test report
-- `Documentation/` — how the system works and why it was built this way
+```
+ESP32/seat_guide/         the main program
+Unit Tests/               one sketch per component, plus the test report
+Documentation/            wiring, physical model, versions, system explanation
+```
+
+## Hardware
+
+- ESP32 DevKit V1 (DOIT)
+- 2 x HC-SR04 ultrasonic sensors
+- WS2812 LED strip, 3 pixels
+- Breadboard and male-to-female jumpers
+
+Wiring is in `Documentation/HARDWARE_WIRING.md`. Toolchain and library versions
+are in `Documentation/VERSIONS.md`.
 
 ## Running it
 
-1. Install the Arduino IDE and, in Boards Manager, the **esp32** package by Espressif.
-2. In Library Manager, install **Adafruit NeoPixel**.
-3. Open `ESP32/seat_guide/seat_guide.ino` and fill in `WIFI_NAME` and `WIFI_PASSWORD`.
-4. Select board **DOIT ESP32 DEVKIT V1** and the serial port, then upload.
-5. Open the Serial Monitor at 115200 baud; it prints the address of the page.
-6. Open that address on a phone connected to the same network.
+1. Open `ESP32/seat_guide/seat_guide.ino` in the Arduino IDE.
+2. Replace `YOUR_HOTSPOT_NAME` and `YOUR_HOTSPOT_PASSWORD` with your own
+   network credentials.
+3. Select the ESP32 Dev Module board and set the upload speed to 115200.
+4. Upload, then open the serial monitor at 115200. It prints the address to
+   open in a browser.
 
-Real credentials are deliberately not committed. The file ships with placeholders.
+Before loading the main program onto new or changed wiring, run
+`Unit Tests/HW_Wiring_Test` first — it confirms every connection in one pass.
