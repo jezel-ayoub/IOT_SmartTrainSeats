@@ -1,21 +1,25 @@
-# Hardware Unit Tests
+# Hardware unit tests
 
-One standalone sketch per piece of hardware. Each one can be uploaded on its
-own, prints `PASS` or `FAIL` to the Serial Monitor at 115200 baud, and tests
-nothing but the part it is named after.
+One sketch per component, plus a test that exercises the whole wiring at once.
 
-| Sketch | Hardware under test |
+Each sketch is standalone: it tests a single thing and prints its result to the
+serial monitor at 115200 baud. The point is to be able to attribute a fault to a
+specific component instead of guessing at it from the behaviour of the finished
+system — a dead sensor and an unpowered sensor look identical from the outside.
+
+| Sketch | What it proves |
 |---|---|
-| `HW_Ultrasonic_Test/` | Both HC-SR04 ultrasonic distance sensors |
-| `HW_LED_Strip_Test/` | WS2812 light strip (3 LEDs) |
+| HW_Ultrasonic_Test | Each HC-SR04 returns a plausible distance that tracks a real object |
+| HW_LED_Strip_Test | All three pixels light, in the right order and the right colours |
+| HW_Wiring_Test | Both sensors and the strip work together on the final wiring |
 
-Results are recorded in [HARDWARE_UNIT_TESTS_REPORT.md](HARDWARE_UNIT_TESTS_REPORT.md).
+## When to run which
 
-## How to run any of them
+**After changing any wiring** — run `HW_Wiring_Test` before loading the main
+program. It covers all eleven connections in one pass, and it is faster to run
+one test than to debug the full system.
 
-1. Open the `.ino` file in the Arduino IDE.
-2. Tools → Board → **DOIT ESP32 DEVKIT V1**, then Tools → Port.
-3. Upload. If the upload does not start, hold the **BOOT** button until the
-   percentages appear.
-4. Tools → Serial Monitor, speed **115200**.
-5. Copy or screenshot the `PASS` / `FAIL` lines as evidence.
+**When one component misbehaves** — run that component's own test. It removes
+every other variable, so whatever it reports is about that component alone.
+
+Results are recorded in `HARDWARE_UNIT_TESTS_REPORT.md`.

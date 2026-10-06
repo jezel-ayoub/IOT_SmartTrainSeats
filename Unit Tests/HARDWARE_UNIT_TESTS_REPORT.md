@@ -1,34 +1,43 @@
-# Hardware Unit Tests Report
+# Hardware unit test report
 
-Project: Smart Train Seat Guide
-Group: _fill in your group number_
+Each test is a standalone sketch under `Unit Tests/`. They exist so that a
+fault can be attributed to a specific component rather than guessed at from the
+behaviour of the whole system.
 
-## Tests
+| Test | What it proves | Result |
+|---|---|---|
+| HW_Ultrasonic_Test | Each HC-SR04 returns a plausible, changing distance | Pass |
+| HW_LED_Strip_Test | All three WS2812 pixels light in the commanded colour | Pass |
+| HW_Wiring_Test | Both sensors and the strip work together on the final wiring | Pass |
 
-| # | Hardware | Test method | Result | Test code |
-|---|---|---|---|---|
-| 1 | ESP32 DevKit V1 | Uploaded a blink sketch; the on-board LED blinked at 1 Hz and the upload log reported `Hash of data verified` | PASS | Arduino IDE built-in Blink |
-| 2 | HC-SR04 sensor, seat A | Sketch pings the sensor and prints the distance; the reading follows a hand moved toward and away from the sensor | PASS | `HW_Ultrasonic_Test/` |
-| 3 | HC-SR04 sensor, seat B | Same method, on the second sensor | PASS | `HW_Ultrasonic_Test/` |
-| 4 | HC-SR04 accuracy | A flat object placed at a ruler-measured 20 cm; the sensor reported 20 cm | PASS | `HW_Ultrasonic_Test/` |
-| 5 | WS2812 light strip | Sketch cycles all three LEDs through red, green and blue | PASS | `HW_LED_Strip_Test/` |
-| 6 | WiFi on the ESP32 | The board joined a phone hotspot and printed its address; the page opened from a phone | PASS | `ESP32/seat_guide/` |
-| 7 | Recovery from network loss | The hotspot was switched off for 20 s and back on; sensing and lights continued, and the page returned without a reset | PASS | `ESP32/seat_guide/` |
+## HW_Wiring_Test
 
-## Notes and observations
+Added after the wiring was rebuilt. It is the acceptance test run before the
+main program is loaded, and after any change to the physical wiring.
 
-- **Readings beyond roughly one metre fluctuate.** The HC-SR04 emits a wide
-  cone, so distant echoes come back from several objects at once. Close
-  readings, which is what seat detection uses, are stable.
-- **Soft surfaces absorb ultrasound.** Fabric returns a weaker echo than a hard
-  surface, which is one reason the sensor is mounted close to the seat.
-- **Supply voltage.** The HC-SR04 is specified for 5 V while the ESP32 works at
-  3.3 V, and the sensor's Echo pin is currently wired straight to the board.
-  This works, but whether a voltage divider should be added on the Echo line is
-  an open question for the lab engineer.
+**Method.** The sketch drives both trigger lines and times both echo lines, and
+sets the three strip pixels to green, amber and red.
 
-## Evidence
+**Pass criteria.**
 
-- Serial Monitor output from each sketch above
-- A short video of both seats changing between FREE and TAKEN, and of the
-  platform lights changing colour
+1. Three LEDs light, in the commanded colours and order.
+2. Both sensors report a distance in the 3–350 cm range.
+3. Both readings change when a hand is moved in front of the sensor.
+
+**Why all three matter.** A sensor with no power reports nothing at all, which
+looks identical to a sensor that is broken. A sensor wired to the wrong pin
+reports a constant value, which looks identical to an empty seat. Requiring the
+reading to *change* separates a working sensor from a merely quiet one.
+
+**Result.** Both sensors tracked a hand smoothly; all three pixels lit. Passed.
+
+## Notes on earlier failures
+
+**Flash communication failure during upload.** Uploads failed with "Failed to
+communicate with the flash chip" whenever a jumper was attached to D12. GPIO12
+is sampled at boot to select the flash voltage. Resolved by moving sensor B's
+echo line to D35 and setting the upload speed to 115200.
+
+**Both sensors silent after re-wiring.** Traced to jumpers seated in a
+detached breadboard strip that was not connected to the controller. Covered in
+`HARDWARE_WIRING.md`.

@@ -101,4 +101,4 @@ component.
 ## Verification
 
 `Unit Tests/HW_Wiring_Test/HW_Wiring_Test.ino` exercises every connection in
-this document in a single run. Results are in `HARDWARE_UNIT_TESTS_REPORT.md`.
+this document in a single run. Results are in `Unit Tests/HARDWARE_UNIT_TESTS_REPORT.md`.
