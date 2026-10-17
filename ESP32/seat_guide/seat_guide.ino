@@ -34,16 +34,37 @@ const int TRIG_PINS[2] = {27, 13};   // seat A, seat B
 const int ECHO_PINS[2] = {26, 35};   // D35 is input-only: ideal for an echo line
 const int LED_PIN = 14;
 
+// ===================================================================
+//  THRESHOLDS - ONE PAIR PER SEAT.
+//
+//  Seat A is index 0, seat B is index 1.
+//  TAKEN_BELOW : a reading SMALLER than this means someone is sitting.
+//  FREE_ABOVE  : a reading BIGGER  than this means the seat is empty.
+//
+//  THE RULE THAT MATTERS:
+//    the seat's EMPTY reading must be ABOVE its FREE_ABOVE number.
+//    If the empty reading lands between the two numbers, the seat can
+//    go to TAKEN but can never come back - it gets stuck.
+//
+//  Read each seat's empty number off the Serial Monitor, then set
+//  FREE_ABOVE about 2 cm below it, and TAKEN_BELOW 2 cm below that.
+// ===================================================================
+//                              seat A   seat B
+const float TAKEN_BELOW[2] = {    8.5,     8.5  };   // cm
+const float FREE_ABOVE[2]  = {   10.5,    10.5  };   // cm
+
 // --- Tuning ---
-const float TAKEN_BELOW = 35;            // cm: closer than this may become TAKEN
-const float FREE_ABOVE  = 45;            // cm: farther than this may become FREE
+const int   PINGS        = 5;      // readings per measurement; the middle one is used
+const float MIN_VALID_CM = 2.5;    // anything closer is a reflection, not a seat
+const float MAX_VALID_CM = 25.0;   // anything farther is past the floor
 const unsigned long STAY_TIME  = 2000;   // ms a change must persist to count
 const unsigned long ERROR_TIME = 3000;   // ms without an echo = sensor fault
-const float SMOOTHING = 0.7;             // exponential moving average weight
+const float SMOOTHING = 0.5;             // the median is already clean, so smooth less
 
 enum SeatState { FREE_SEAT, TAKEN_SEAT, FAULT_SEAT };
 SeatState seatState[2] = {FREE_SEAT, FREE_SEAT};
 float smoothDist[2]    = {0, 0};
+float lastRaw[2]       = {0, 0};
 unsigned long changeStart[2] = {0, 0};
 unsigned long lastEcho[2]    = {0, 0};
 
@@ -443,13 +464,36 @@ const char PAGE_JS[] PROGMEM = R"JS(
 
 )JS";
 
-// Sends one ultrasonic ping and returns the distance in cm, or 0 on timeout.
-float readDistance(int trigPin, int echoPin) {
+// One ping. Returns cm, or 0 if nothing came back.
+float onePing(int trigPin, int echoPin) {
   digitalWrite(trigPin, LOW);  delayMicroseconds(2);
   digitalWrite(trigPin, HIGH); delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
   long duration = pulseIn(echoPin, HIGH, 30000);
+  if (duration == 0) return 0;
   return duration * 0.0343 / 2.0;
+}
+
+// Takes PINGS readings and returns the MIDDLE one, not the average.
+// A stray echo - off the backrest, off a wall, off the other sensor -
+// shows up as one odd value out of five, and the middle value ignores
+// it completely. An average would be dragged by it; a median is not.
+float readDistance(int trigPin, int echoPin) {
+  float v[PINGS];
+  int n = 0;
+  for (int k = 0; k < PINGS; k++) {
+    float d = onePing(trigPin, echoPin);
+    if (d >= MIN_VALID_CM && d <= MAX_VALID_CM) v[n++] = d;
+    delay(6);
+  }
+  if (n == 0) return 0;                       // nothing sensible came back
+  for (int a = 1; a < n; a++) {               // sort the few values we have
+    float key = v[a];
+    int b = a - 1;
+    while (b >= 0 && v[b] > key) { v[b + 1] = v[b]; b--; }
+    v[b + 1] = key;
+  }
+  return v[n / 2];                            // the middle one
 }
 
 void updateSeat(int i) {
@@ -461,18 +505,19 @@ void updateSeat(int i) {
     return;
   }
   lastEcho[i] = now;
+  lastRaw[i]  = d;
 
   if (smoothDist[i] == 0 || seatState[i] == FAULT_SEAT) smoothDist[i] = d;
   else smoothDist[i] = SMOOTHING * smoothDist[i] + (1 - SMOOTHING) * d;
 
   if (seatState[i] == FAULT_SEAT) {                // sensor recovered
-    seatState[i] = (smoothDist[i] < TAKEN_BELOW) ? TAKEN_SEAT : FREE_SEAT;
+    seatState[i] = (smoothDist[i] < TAKEN_BELOW[i]) ? TAKEN_SEAT : FREE_SEAT;
     changeStart[i] = 0;
     return;
   }
 
-  bool wantsChange = (seatState[i] == FREE_SEAT  && smoothDist[i] < TAKEN_BELOW) ||
-                     (seatState[i] == TAKEN_SEAT && smoothDist[i] > FREE_ABOVE);
+  bool wantsChange = (seatState[i] == FREE_SEAT  && smoothDist[i] < TAKEN_BELOW[i]) ||
+                     (seatState[i] == TAKEN_SEAT && smoothDist[i] > FREE_ABOVE[i]);
   if (!wantsChange) { changeStart[i] = 0; return; }
 
   if (changeStart[i] == 0) changeStart[i] = now;
@@ -561,8 +606,24 @@ void keepWifi() {
   }
 }
 
+// Turns a seat state into a word for the Serial Monitor.
+const char* stateName(SeatState st) {
+  if (st == TAKEN_SEAT) return "TAKEN";
+  if (st == FAULT_SEAT) return "FAULT";
+  return "FREE";
+}
+
 void setup() {
   Serial.begin(115200);
+  delay(300);
+  Serial.println();
+  Serial.println("=== Smart Train Seat Guide ===");
+  Serial.printf("Seat A:  TAKEN below %.1f cm,  FREE above %.1f cm\n", TAKEN_BELOW[0], FREE_ABOVE[0]);
+  Serial.printf("Seat B:  TAKEN below %.1f cm,  FREE above %.1f cm\n", TAKEN_BELOW[1], FREE_ABOVE[1]);
+  Serial.println("Each seat's EMPTY reading must be ABOVE its FREE number.");
+  Serial.println("If it is not, that seat will stick on TAKEN.");
+  Serial.println();
+
   for (int i = 0; i < 2; i++) {
     pinMode(TRIG_PINS[i], OUTPUT);
     pinMode(ECHO_PINS[i], INPUT);
@@ -609,19 +670,18 @@ void setup() {
 
 void loop() {
   updateSeat(0);
-  delay(60);                 // avoids one sensor hearing the other's echo
+  delay(100);                // lets every echo die before the other sensor fires
   updateSeat(1);
-  delay(60);
+  delay(100);
   updateLights();
   keepWifi();
   server.handleClient();
 
-  // distances, for the Serial Plotter
-  if (millis() - lastPrint > 150) {
+  // live readout, so the Serial Monitor shows both distance and decision
+  if (millis() - lastPrint > 400) {
     lastPrint = millis();
-    Serial.print("SeatA:");
-    Serial.print(smoothDist[0]);
-    Serial.print(",SeatB:");
-    Serial.println(smoothDist[1]);
+    Serial.printf("Seat A  raw %5.1f  avg %5.1f  %-5s   |   Seat B  raw %5.1f  avg %5.1f  %-5s\n",
+                  lastRaw[0], smoothDist[0], stateName(seatState[0]),
+                  lastRaw[1], smoothDist[1], stateName(seatState[1]));
   }
 }
